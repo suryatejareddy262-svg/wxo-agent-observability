@@ -1,0 +1,26 @@
+# Dockerfile.patch  —  WXO trace hook layer for Azure Foundry hosted agents
+# ==========================================================================
+# Layers sitecustomize.py on top of ANY existing agent image.
+# Python auto-imports sitecustomize at startup (before main.py) so the hook
+# installs itself without touching any agent code or CMD.
+#
+# What changes:  + sitecustomize.py in Python site-packages
+# What stays:    CMD, ENTRYPOINT, main.py, requirements, ports — UNCHANGED
+#
+# All config comes from env vars injected at the agent version level:
+#   cloud : WXO_OTEL_EXPORT_URL, WXO_API_KEY, WXO_TOKEN_URL, WXO_TENANT_ID
+#   cpd   : WXO_DEPLOYMENT_MODE=cpd, CPD_HOST_URL, CPD_USERNAME, CPD_PASSWORD,
+#           CPD_INSTANCE_ID, CPD_NAMESPACE (export URL is derived)
+#   both  : WXO_AGENT_ID, WXO_AGENT_NAME, WXO_ENVIRONMENT
+
+ARG SOURCE_IMAGE
+FROM ${SOURCE_IMAGE}
+
+USER root
+
+# Install sitecustomize.py into the first site-packages directory.
+# Works for any Python 3.x regardless of minor version.
+COPY sitecustomize.py /tmp/wxo_sitecustomize.py
+RUN SITE=$(python3 -c "import site; print(site.getsitepackages()[0])") && \
+    cp /tmp/wxo_sitecustomize.py "${SITE}/sitecustomize.py" && \
+    echo "WXO hook installed at ${SITE}/sitecustomize.py"

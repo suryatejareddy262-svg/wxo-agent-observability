@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: WXO OTLP Trace Forwarder - Serverless Lambda Deployment
+
+Parameters:
+  WxoDeploymentMode:
+    Type: String
+    Default: cloud
+    AllowedValues: [cloud, cpd]
+    Description: cloud (IBM Cloud SaaS, API key) or cpd (on-prem Cloud Pak for Data, username/password)
+  WxoApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: WXO Cloud IAM API Key (cloud mode)
+  WxoTokenUrl:
+    Type: String
+    Default: https://account-iam.platform.saas.ibm.com/api/2.0/apikeys/token
+    Description: WXO IAM Token URL
+  WxoTenantId:
+    Type: String
+    Default: ''
+    Description: Default WXO Tenant ID (cloud mode)
+  WxoOtelExportUrl:
+    Type: String
+    Default: ''
+    Description: Default WXO OTel Export URL (cloud mode; optional override in cpd mode)
+  CpdHostUrl:
+    Type: String
+    Default: ''
+    Description: CPD base URL, e.g. https://cpd-<ns>.apps.<domain> (cpd mode)
+  CpdUsername:
+    Type: String
+    Default: ''
+    Description: CPD username (cpd mode)
+  CpdPassword:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: CPD password (cpd mode)
+  CpdInstanceId:
+    Type: String
+    Default: ''
+    Description: WXO instance ID on CPD (cpd mode)
+  CpdNamespace:
+    Type: String
+    Default: ''
+    Description: CPD namespace (cpd mode)
+  WxoEnvironment:
+    Type: String
+    Default: draft
+    Description: Environment name (draft or live)
+  WxoAgentMap:
+    Type: String
+    Default: '{}'
+    Description: JSON string mapping platform agent IDs to WXO agent UUIDs
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 256
+    Runtime: python3.11
+
+Resources:
+  WxoOtlpForwarderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: wxo-agent-analytics-otlp-forwarder
+      CodeUri: .
+      Handler: lambda_function.lambda_handler
+      Environment:
+        Variables:
+          WXO_DEPLOYMENT_MODE: !Ref WxoDeploymentMode
+          CPD_HOST_URL: !Ref CpdHostUrl
+          CPD_USERNAME: !Ref CpdUsername
+          CPD_PASSWORD: !Ref CpdPassword
+          CPD_INSTANCE_ID: !Ref CpdInstanceId
+          CPD_NAMESPACE: !Ref CpdNamespace
+          API_KEY: !Ref WxoApiKey
+          TOKEN_URL: !Ref WxoTokenUrl
+          WXO_TENANT_ID: !Ref WxoTenantId
+          WXO_OTEL_EXPORT_URL: !Ref WxoOtelExportUrl
+          ENVIRONMENT_NAME: !Ref WxoEnvironment
+          WXO_AGENT_MAP: !Ref WxoAgentMap
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors:
+          AllowOrigins:
+            - '*'
+          AllowMethods:
+            - '*'
+          AllowHeaders:
+            - '*'
+      Events:
+        PostTraces:
+          Type: HttpApi
+          Properties:
+            Path: /v1/traces
+            Method: post
+        PostTracesWithAgent:
+          Type: HttpApi
+          Properties:
+            Path: /v1/traces/{agent_id}
+            Method: post
+        HealthCheck:
+          Type: HttpApi
+          Properties:
+            Path: /health
+            Method: get
+
+Outputs:
+  FunctionUrl:
+    Description: Lambda Function URL endpoint for OTLP traces push
+    Value: !GetAtt WxoOtlpForwarderFunctionUrl.FunctionUrl
+  HttpApiUrl:
+    Description: HTTP API Gateway endpoint
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com/v1/traces"
